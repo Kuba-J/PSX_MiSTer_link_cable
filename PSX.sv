@@ -381,6 +381,7 @@ parameter CONF_STR = {
 	"D8h2O[9],Show Crosshair,Off,On;",
 	"D8h4O[31],DS Mode,L3+R3+Up/Dn | Click,L1+L2+R1+R2+Up/Dn;",
 	"O[57:56],Multitap,Off,Port1: 4 x Digital,Port1: 4 x Analog;",
+	"O[94:93],Link Cable(SNAC),Off,Type A,Type B;",
 	"-;",
 
 	"P1,Video & Audio;",
@@ -881,6 +882,17 @@ wire snacPort2       = (status[52:49] == 4'b1010) && ~multitap;
 wire PadPortStick2   = (status[52:49] == 4'b1011);
 wire PadPortPopn2    = (status[52:49] == 4'b1100);
 
+// link cable over SNAC (USB3 user port).
+wire [1:0] linkCableMode = status[94:93];               // 0=Off, 1=Type A, 2=Type B
+wire       linkCableEn   = (linkCableMode != 2'b00) && ~snacPort1 && ~snacPort2;
+
+wire       sio_txd, sio_dtr, sio_rts;
+
+
+reg        sio_rxd_in = 1'b1;
+reg        sio_dsr_in = 1'b0;
+reg        sio_cts_in = 1'b1;
+
 reg paddleMode = 0;
 reg paddleMin = 0;
 reg paddleMax = 0;
@@ -995,8 +1007,8 @@ always @(posedge clk_1x) begin
 
    paused <= 0;
 
-   // pause from OSD open
-   if (~status[64] & OSD_STATUS & (unpause == 0)) begin
+   // Pause is suppressed while the link cable is in use.
+   if (~status[64] & OSD_STATUS & (unpause == 0) & ~linkCableEn) begin
       paused <= 1;
    end
 
@@ -1005,7 +1017,7 @@ always @(posedge clk_1x) begin
    if (joy[18] & ~buttonpause_1) begin
       button_paused <= ~button_paused;
    end
-   if (button_paused) begin
+   if (button_paused & ~linkCableEn) begin
       paused <= 1;
    end
 
@@ -1297,6 +1309,14 @@ psx
    .receiveValidSnac(receiveValidSnac),
    .ackSnac(~ack),//using real ack not the 1 cycle ack
    .snacMC(status[66]),
+   //link cable
+   .linkCableOn(linkCableEn),
+   .sio_TXD(sio_txd),
+   .sio_RXD(sio_rxd_in),
+   .sio_DTR(sio_dtr),
+   .sio_DSR(sio_dsr_in),
+   .sio_RTS(sio_rts),
+   .sio_CTS(sio_cts_in),
 
    //sound
 	.sound_out_left(AUDIO_L),
@@ -1825,11 +1845,45 @@ begin
 			irq10Snac   <= ~USER_IN6_2;
 		end
 	end
+	else if (linkCableEn) begin
+		// PSX link cable over a straight USB3 A-A cable through SNAC.
+		// One console must be set to Type A and the other to Type B so that
+		// TXD->RXD, DTR->DSR and RTS->CTS get crossed over.
+		irq10Snac <= 1'b0;
+		ack       <= 1'b1;
+		Dat       <= 1'b1;
+		USER_OUT[0] <= 1'b1;
+		USER_OUT[1] <= 1'b1;
+		USER_OUT[2] <= 1'b1;
+		USER_OUT[3] <= 1'b1;
+		USER_OUT[4] <= 1'b1;
+		USER_OUT[5] <= 1'b1;
+		USER_OUT[6] <= 1'b1;
+		if (linkCableMode == 2'b01) begin // Type A
+			USER_OUT[0] <= sio_txd;
+			USER_OUT[1] <= sio_dtr;
+			USER_OUT[2] <= sio_rts;
+			sio_rxd_in  <= USER_IN[3];
+			sio_dsr_in  <= USER_IN[4];
+			sio_cts_in  <= USER_IN[5];
+		end
+		else begin                        // Type B
+			USER_OUT[3] <= sio_txd;
+			USER_OUT[6] <= sio_dtr;
+			USER_OUT[2] <= sio_rts;
+			sio_rxd_in  <= USER_IN[0];
+			sio_dsr_in  <= USER_IN[1];
+			sio_cts_in  <= USER_IN[5];
+		end
+	end
 	else begin
 		USER_OUT  <= '1;
 		irq10Snac <= 1'b0;
 		ack       <= 1'b1;
 		Dat       <= 1'b1;
+		sio_rxd_in <= 1'b1;
+		sio_dsr_in <= 1'b0;
+		sio_cts_in <= 1'b1;
 	end
 
 	oldselectedPort1 <= selectedPort1Snac;
