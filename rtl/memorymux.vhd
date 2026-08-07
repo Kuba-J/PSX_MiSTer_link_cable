@@ -75,6 +75,7 @@ entity memorymux is
       bus_pad_dataRead     : in  std_logic_vector(31 downto 0);
       
       bus_sio_addr         : out unsigned(3 downto 0); 
+      bus_sio_reqsize      : out unsigned(1 downto 0); 
       bus_sio_dataWrite    : out std_logic_vector(31 downto 0);
       bus_sio_read         : out std_logic;
       bus_sio_write        : out std_logic;
@@ -310,7 +311,7 @@ begin
 
    isIdle <= '1' when (state = IDLE and readram = '0' and writeram = '0' and writeFifo_busy = '0' and mem_save_request = '0') else '0';
 
-   process (state, addressData_buf, writeMask_buf, dataWrite_buf)
+   process (state, addressData_buf, writeMask_buf, dataWrite_buf, reqsize_buf)
       variable address  : unsigned(28 downto 0);
       variable enableRead  : std_logic;
       variable enableWrite : std_logic;
@@ -352,6 +353,7 @@ begin
       bus_sio_read      <= '0';
       bus_sio_write     <= '0';
       bus_sio_addr      <= address(3 downto 0);
+      bus_sio_reqsize   <= reqsize_buf;
       bus_sio_dataWrite <= dataWrite_buf;
       bus_sio_writeMask <= writeMask_buf;
       if (address >= 16#1F801050# and address < 16#1F801060#) then

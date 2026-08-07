@@ -252,6 +252,14 @@ entity psx_mister is
       snacMC                : in  std_logic;
       receiveBufferSnac	    : in  std_logic_vector(7 downto 0);
       transmitValueSnac     : out std_logic_vector(7 downto 0);		
+      -- link cable (SIO1 via SNAC)
+      linkCableOn           : in  std_logic;
+      sio_TXD               : out std_logic;
+      sio_RXD               : in  std_logic;
+      sio_DTR               : out std_logic;
+      sio_DSR               : in  std_logic;
+      sio_RTS               : out std_logic;
+      sio_CTS               : in  std_logic;
       selectedPort1Snac     : out std_logic;
       selectedPort2Snac     : out std_logic;
       clk9Snac              : out std_logic;
@@ -633,6 +641,14 @@ begin
       receiveValidSnac      => receiveValidSnac,
       ackSnac               => ackSnac,
       snacMC                => snacMC,
+
+      linkCableOn           => linkCableOn,
+      sio_TXD               => sio_TXD,
+      sio_RXD               => sio_RXD,
+      sio_DTR               => sio_DTR,
+      sio_DSR               => sio_DSR,
+      sio_RTS               => sio_RTS,
+      sio_CTS               => sio_CTS,
 		
       -- sound              => -- sound       
       sound_out_left        => sound_out_left, 

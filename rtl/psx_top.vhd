@@ -211,6 +211,15 @@ entity psx_top is
       clk9Snac              : out std_logic;
       beginTransferSnac     : out std_logic;
 
+      -- link cable (SIO1 via SNAC)
+      linkCableOn           : in  std_logic;
+      sio_TXD               : out std_logic;
+      sio_RXD               : in  std_logic;
+      sio_DTR               : out std_logic;
+      sio_DSR               : in  std_logic;
+      sio_RTS               : out std_logic;
+      sio_CTS               : in  std_logic;
+
       -- sound                            
       sound_out_left        : out std_logic_vector(15 downto 0) := (others => '0');
       sound_out_right       : out std_logic_vector(15 downto 0) := (others => '0');
@@ -339,6 +348,7 @@ architecture arch of psx_top is
    signal bus_pad_dataRead       : std_logic_vector(31 downto 0);   
    
    signal bus_sio_addr           : unsigned(3 downto 0); 
+   signal bus_sio_reqsize        : unsigned(1 downto 0); 
    signal bus_sio_dataWrite      : std_logic_vector(31 downto 0);
    signal bus_sio_read           : std_logic;
    signal bus_sio_write          : std_logic;
@@ -1168,7 +1178,20 @@ begin
       ce                   => ce,   
       reset                => reset_intern,
       
+      linkCableOn          => linkCableOn,
+      
+      sio_TXD              => sio_TXD,
+      sio_RXD              => sio_RXD,
+      sio_DTR              => sio_DTR,
+      sio_DSR              => sio_DSR,
+      sio_RTS              => sio_RTS,
+      sio_CTS              => sio_CTS,
+      
+      irqRequest           => irq_SIO,
+      
+      
       bus_addr             => bus_sio_addr,     
+      bus_reqsize          => bus_sio_reqsize,
       bus_dataWrite        => bus_sio_dataWrite,
       bus_read             => bus_sio_read,     
       bus_write            => bus_sio_write,    
@@ -1184,7 +1207,6 @@ begin
       SS_DataRead          => SS_DataRead_SIO
    );
    
-   irq_SIO       <= '0'; -- todo
    irq_LIGHTPEN  <= '1' when
                     (irq10Snac = '1' and snacport1 = '1') or
                     (irq10Snac = '1' and snacport2 = '1') or
@@ -1783,6 +1805,7 @@ begin
       bus_pad_dataRead     => bus_pad_dataRead,       
       
       bus_sio_addr         => bus_sio_addr,     
+      bus_sio_reqsize      => bus_sio_reqsize,
       bus_sio_dataWrite    => bus_sio_dataWrite,
       bus_sio_read         => bus_sio_read,     
       bus_sio_write        => bus_sio_write,    
