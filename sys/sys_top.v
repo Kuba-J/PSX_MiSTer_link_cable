@@ -46,8 +46,10 @@ module sys_top
 	//////////// SDR ///////////
 	output [12:0] SDRAM_A,
 	inout  [15:0] SDRAM_DQ,
+`ifndef MISTER_LINK_CABLE
 	output        SDRAM_DQML,
 	output        SDRAM_DQMH,
+`endif
 	output        SDRAM_nWE,
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
@@ -96,10 +98,12 @@ module sys_top
 `endif
 
 	////////// I/O ALT /////////
+`ifndef MISTER_LINK_CABLE
 	output        SD_SPI_CS,
 	input         SD_SPI_MISO,
 	output        SD_SPI_CLK,
 	output        SD_SPI_MOSI,
+`endif
 
 	inout         SDCD_SPDIF,
 	output        IO_SCL,
@@ -122,12 +126,33 @@ module sys_top
 
 	///////// USER IO ///////////
 	inout   [6:0] USER_IO
+
+`ifdef MISTER_LINK_CABLE
+	,
+	///////// LINK CABLE ////////
+	inout   [5:0] LINK_IO
+`endif
 );
 
 //////////////////////  Secondary SD  ///////////////////////////////////
 wire SD_CS, SD_CLK, SD_MOSI, SD_MISO, SD_CD;
 
-`ifndef MISTER_DUAL_SDRAM
+`ifdef MISTER_LINK_CABLE
+	// SPI SD pins are the link port here
+	wire   sd_cd       = SDCD_SPDIF & ~SW[2]; // SW[2]=ON workaround for faulty boards without SD card detect pin.
+	assign SD_CD       = mcp_en ? mcp_sdcd : sd_cd;
+	assign SD_MISO     = SD_CD | (mcp_en ? 1'b1 : (VGA_EN | SDIO_DAT[0]));
+	assign {SDIO_CLK,SDIO_CMD,SDIO_DAT} = av_dis ? 6'bZZZZZZ : (mcp_en | sd_cd) ? {vga_g,vga_r,vga_b} : {SD_CLK,SD_MOSI,SD_CS,3'bZZZ};
+
+	// no DQM pins in this build, byte write masks are dropped
+	wire SDRAM_DQML, SDRAM_DQMH;
+`elsif MISTER_DUAL_SDRAM
+	assign SD_CD       = mcp_sdcd;
+	assign SD_MISO     = mcp_sdcd | SD_SPI_MISO;
+	assign SD_SPI_CS   = mcp_sdcd ? 1'bZ : SD_CS;
+	assign SD_SPI_CLK  = mcp_sdcd ? 1'bZ : SD_CLK;
+	assign SD_SPI_MOSI = mcp_sdcd ? 1'bZ : SD_MOSI;
+`else
 	wire   sd_cd       = SDCD_SPDIF & ~SW[2]; // SW[2]=ON workaround for faulty boards without SD card detect pin.
 	assign SD_CD       = mcp_en ? mcp_sdcd : sd_cd;
 	assign SD_MISO     = SD_CD | (mcp_en ? SD_SPI_MISO : (VGA_EN | SDIO_DAT[0]));
@@ -135,12 +160,6 @@ wire SD_CS, SD_CLK, SD_MOSI, SD_MISO, SD_CD;
 	assign SD_SPI_CLK  = (~mcp_en | mcp_sdcd) ? 1'bZ : SD_CLK;
 	assign SD_SPI_MOSI = (~mcp_en | mcp_sdcd) ? 1'bZ : SD_MOSI;
 	assign {SDIO_CLK,SDIO_CMD,SDIO_DAT} = av_dis ? 6'bZZZZZZ : (mcp_en | sd_cd) ? {vga_g,vga_r,vga_b} : {SD_CLK,SD_MOSI,SD_CS,3'bZZZ};
-`else
-	assign SD_CD       = mcp_sdcd;
-	assign SD_MISO     = mcp_sdcd | SD_SPI_MISO;
-	assign SD_SPI_CS   = mcp_sdcd ? 1'bZ : SD_CS;
-	assign SD_SPI_CLK  = mcp_sdcd ? 1'bZ : SD_CLK;
-	assign SD_SPI_MOSI = mcp_sdcd ? 1'bZ : SD_MOSI;
 `endif
 
 //////////////////////  LEDs/Buttons  ///////////////////////////////////
@@ -1642,6 +1661,16 @@ audio_out audio_out
 
 ////////////////  User I/O (USB 3.0 connector) /////////////////////////
 
+`ifdef MISTER_LINK_CABLE
+// user_oe drives the lane push-pull
+assign USER_IO[0] = user_oe[0]            ? user_out[0] : !user_out[0]  ? 1'b0 : 1'bZ;
+assign USER_IO[1] = user_oe[1]            ? user_out[1] : !user_out[1]  ? 1'b0 : 1'bZ;
+assign USER_IO[2] = (user_oe[2] & ~SW[1]) ? user_out[2] : !(SW[1] ? HDMI_I2S   : user_out[2]) ? 1'b0 : 1'bZ;
+assign USER_IO[3] = user_oe[3]            ? user_out[3] : !user_out[3]  ? 1'b0 : 1'bZ;
+assign USER_IO[4] = (user_oe[4] & ~SW[1]) ? user_out[4] : !(SW[1] ? HDMI_SCLK  : user_out[4]) ? 1'b0 : 1'bZ;
+assign USER_IO[5] = (user_oe[5] & ~SW[1]) ? user_out[5] : !(SW[1] ? HDMI_LRCLK : user_out[5]) ? 1'b0 : 1'bZ;
+assign USER_IO[6] = user_oe[6]            ? user_out[6] : !user_out[6]  ? 1'b0 : 1'bZ;
+`else
 assign USER_IO[0] =                       !user_out[0]  ? 1'b0 : 1'bZ;
 assign USER_IO[1] =                       !user_out[1]  ? 1'b0 : 1'bZ;
 assign USER_IO[2] = !(SW[1] ? HDMI_I2S   : user_out[2]) ? 1'b0 : 1'bZ;
@@ -1649,6 +1678,7 @@ assign USER_IO[3] =                       !user_out[3]  ? 1'b0 : 1'bZ;
 assign USER_IO[4] = !(SW[1] ? HDMI_SCLK  : user_out[4]) ? 1'b0 : 1'bZ;
 assign USER_IO[5] = !(SW[1] ? HDMI_LRCLK : user_out[5]) ? 1'b0 : 1'bZ;
 assign USER_IO[6] =                       !user_out[6]  ? 1'b0 : 1'bZ;
+`endif
 
 assign user_in[0] =         USER_IO[0];
 assign user_in[1] =         USER_IO[1];
@@ -1657,6 +1687,19 @@ assign user_in[3] =         USER_IO[3];
 assign user_in[4] = SW[1] | USER_IO[4];
 assign user_in[5] = SW[1] | USER_IO[5];
 assign user_in[6] =         USER_IO[6];
+
+`ifdef MISTER_LINK_CABLE
+////////////////  Link cable I/O (SuperDock Ext. port) /////////////////
+
+assign LINK_IO[0] = link_oe[0] ? link_out[0] : !link_out[0] ? 1'b0 : 1'bZ;
+assign LINK_IO[1] = link_oe[1] ? link_out[1] : !link_out[1] ? 1'b0 : 1'bZ;
+assign LINK_IO[2] = link_oe[2] ? link_out[2] : !link_out[2] ? 1'b0 : 1'bZ;
+assign LINK_IO[3] = link_oe[3] ? link_out[3] : !link_out[3] ? 1'b0 : 1'bZ;
+assign LINK_IO[4] = link_oe[4] ? link_out[4] : !link_out[4] ? 1'b0 : 1'bZ;
+assign LINK_IO[5] = link_oe[5] ? link_out[5] : !link_out[5] ? 1'b0 : 1'bZ;
+
+assign link_in    = LINK_IO;
+`endif
 
 
 ///////////////////  User module connection ////////////////////////////
@@ -1692,6 +1735,10 @@ sync_fix sync_v(clk_vid, vs_emu, vs_fix);
 sync_fix sync_h(clk_vid, hs_emu, hs_fix);
 
 wire  [6:0] user_out, user_in;
+`ifdef MISTER_LINK_CABLE
+wire  [5:0] link_out, link_in, link_oe;
+wire  [6:0] user_oe;
+`endif
 
 assign clk_ihdmi= clk_vid;
 assign ce_hpix  = vga_ce_sl;
@@ -1861,6 +1908,13 @@ emu emu
 
 	.USER_OUT(user_out),
 	.USER_IN(user_in)
+`ifdef MISTER_LINK_CABLE
+	,
+	.LINK_OUT(link_out),
+	.LINK_IN(link_in),
+	.LINK_OE(link_oe),
+	.USER_OE(user_oe)
+`endif
 );
 
 endmodule

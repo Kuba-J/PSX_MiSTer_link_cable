@@ -10,7 +10,8 @@ entity sio is
       reset                : in  std_logic; 
       
       linkCableOn          : in  std_logic;
-      
+      linkSpeed            : in  std_logic_vector(2 downto 0);
+
       sio_TXD              : out std_logic := '1';
       sio_RXD              : in  std_logic;
       sio_DTR              : out std_logic := '0';
@@ -39,6 +40,17 @@ entity sio is
 end entity;
 
 architecture arch of sio is
+
+   -- returns v * (1 + s/8)
+   function trim(v : unsigned(22 downto 0); s : std_logic_vector(2 downto 0)) return unsigned is
+      variable r : unsigned(22 downto 0);
+   begin
+      r := v;
+      if (s(2) = '1') then r := r + (v srl 1); end if;
+      if (s(1) = '1') then r := r + (v srl 2); end if;
+      if (s(0) = '1') then r := r + (v srl 3); end if;
+      return r;
+   end function;
 
    -- registers
    signal SIO_MODE         : std_logic_vector( 7 downto 0) := x"00";
@@ -156,8 +168,9 @@ begin
    charLenBits <= to_unsigned(5, 4) + resize(unsigned(SIO_MODE(3 downto 2)), 4);
    
    -- bit timing
-   process (SIO_BAUD, SIO_MODE)
+   process (SIO_BAUD, SIO_MODE, linkSpeed)
       variable reload : unsigned(15 downto 0);
+      variable base   : unsigned(22 downto 0);
       variable cyc    : unsigned(22 downto 0);
       variable factor : unsigned(22 downto 0);
    begin
@@ -165,23 +178,27 @@ begin
       if (reload = 0) then
          reload := to_unsigned(1, 16);
       end if;
-      -- psx-spx baud formula with tuned link timing
       case (SIO_MODE(1 downto 0)) is
-         when "10"   => cyc := (resize(reload, 23) sll 4) + (resize(reload, 23) sll 3)
-                             + (resize(reload, 23) sll 1);
-                        factor := to_unsigned( 26, 23);   -- MUL16 x1.625
-         when "11"   => cyc := (resize(reload, 23) sll 6) + (resize(reload, 23) sll 5)
-                             + (resize(reload, 23) sll 3);
-                        factor := to_unsigned(104, 23);   -- MUL64 x1.625
-         when others => cyc := (resize(reload, 23) sll 1) - (resize(reload, 23) srl 2);
-                        factor := to_unsigned(  2, 23);   -- MUL1  x1.625
+         when "10"   => base := resize(reload, 23) sll 4;   -- MUL16
+                        factor := to_unsigned(16, 23);
+         when "11"   => base := resize(reload, 23) sll 6;   -- MUL64
+                        factor := to_unsigned(64, 23);
+         when others => base := resize(reload, 23);         -- MUL1
+                        factor := to_unsigned( 1, 23);
       end case;
+      cyc    := trim(base, linkSpeed);
+      factor := trim(factor, linkSpeed);
+      -- MUL1 runs 1.75 at the default setting
+      if (SIO_MODE(1) = '0' and linkSpeed = "101") then
+         cyc    := (resize(reload, 23) sll 1) - (resize(reload, 23) srl 2);
+         factor := to_unsigned(2, 23);
+      end if;
       cyc(0) := '0';           -- AND NOT 1
       if (cyc < factor) then
          cyc := factor;
       end if;
-      if (cyc < 2) then 
-         cyc := to_unsigned(2, 23); 
+      if (cyc < 2) then
+         cyc := to_unsigned(2, 23);
       end if;
       cyclesPerBit  <= cyc;
       cyclesHalfBit <= '0' & cyc(22 downto 1);

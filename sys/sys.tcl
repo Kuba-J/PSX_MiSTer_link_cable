@@ -4,6 +4,8 @@ set_global_assignment -name DEVICE_FILTER_PACKAGE UFBGA
 set_global_assignment -name DEVICE_FILTER_PIN_COUNT 672
 set_global_assignment -name DEVICE_FILTER_SPEED_GRADE 7
 
+# SPI SD and DQM pins live in sys_spi_sd.tcl or sys_link_port.tcl, source one
+
 #============================================================
 # ADC
 #============================================================
@@ -81,8 +83,6 @@ set_location_assignment PIN_AG14 -to SDRAM_DQ[12]
 set_location_assignment PIN_AD5 -to SDRAM_DQ[13]
 set_location_assignment PIN_AF4 -to SDRAM_DQ[14]
 set_location_assignment PIN_AH3 -to SDRAM_DQ[15]
-set_location_assignment PIN_AG13 -to SDRAM_DQML
-set_location_assignment PIN_AF13 -to SDRAM_DQMH
 set_location_assignment PIN_AD20 -to SDRAM_CLK
 set_location_assignment PIN_AG10 -to SDRAM_CKE
 set_location_assignment PIN_AA19 -to SDRAM_nWE
@@ -97,16 +97,6 @@ set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ[*]
 set_instance_assignment -name FAST_INPUT_REGISTER ON -to SDRAM_DQ[*]
 set_instance_assignment -name ALLOW_SYNCH_CTRL_USAGE OFF -to *|SDRAM_*
 
-#============================================================
-# SPI SD
-#============================================================
-set_location_assignment PIN_AE15 -to SD_SPI_CS
-set_location_assignment PIN_AH8  -to SD_SPI_MISO
-set_location_assignment PIN_AG8  -to SD_SPI_CLK
-set_location_assignment PIN_U13  -to SD_SPI_MOSI
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SD_SPI*
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SD_SPI*
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SD_SPI*
 
 
 #============================================================

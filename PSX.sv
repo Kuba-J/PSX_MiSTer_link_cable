@@ -174,8 +174,25 @@ module emu
 	input   [6:0] USER_IN,
 	output  [6:0] USER_OUT,
 
+`ifdef MISTER_LINK_CABLE
+	// Open drain link port, set LINK_OUT to 1 to read from LINK_IN.
+	input   [5:0] LINK_IN,
+	output  [5:0] LINK_OUT,
+
+	// 1 = drive lane push-pull, 0 = open drain
+	output  [5:0] LINK_OE,
+	output  [6:0] USER_OE,
+`endif
+
 	input         OSD_STATUS
 );
+
+`ifndef MISTER_LINK_CABLE
+wire  [5:0] LINK_IN = '1;
+logic [5:0] LINK_OUT;
+wire  [5:0] LINK_OE;
+wire  [6:0] USER_OE;
+`endif
 
 assign HDMI_FREEZE = 1'b0;
 assign HDMI_BOB_DEINT = status[41];
@@ -381,7 +398,13 @@ parameter CONF_STR = {
 	"D8h2O[9],Show Crosshair,Off,On;",
 	"D8h4O[31],DS Mode,L3+R3+Up/Dn | Click,L1+L2+R1+R2+Up/Dn;",
 	"O[57:56],Multitap,Off,Port1: 4 x Digital,Port1: 4 x Analog;",
-	"O[94:93],Link Cable(SNAC),Off,Type A,Type B;",
+	"O[94:93],Link Cable,Off,Type A,Type B;",
+`ifdef MISTER_LINK_CABLE
+	"O[97:95],Link Speed,1.625x Default,1.000x,1.125x,1.250x,1.375x,1.500x,1.750x,1.875x;",
+	"D0O[98],Link Port,SNAC,SuperDock Ext.;",
+	"O[99],Link Drive,Open Drain,Push-Pull;",
+	"O[100],Link Cable Wiring,Crossover,Straight;",
+`endif
 	"-;",
 
 	"P1,Video & Audio;",
@@ -882,9 +905,45 @@ wire snacPort2       = (status[52:49] == 4'b1010) && ~multitap;
 wire PadPortStick2   = (status[52:49] == 4'b1011);
 wire PadPortPopn2    = (status[52:49] == 4'b1100);
 
-// link cable over SNAC (USB3 user port).
+// link cable
 wire [1:0] linkCableMode = status[94:93];               // 0=Off, 1=Type A, 2=Type B
-wire       linkCableEn   = (linkCableMode != 2'b00) && ~snacPort1 && ~snacPort2;
+`ifdef MISTER_LINK_CABLE
+wire       linkPortSnac  = ~status[98];                 // 0=SNAC, 1=SuperDock Ext.
+wire       linkPushPull  = status[99];                  // 1=drive lanes actively
+wire       linkStraight  = status[100];                 // 1=1:1 cable, 0=USB3 crossover
+`else
+wire       linkPortSnac  = 1'b1;
+wire       linkPushPull  = 1'b0;
+wire       linkStraight  = 1'b0;
+`endif
+wire       linkCableEn   = (linkCableMode != 2'b00) && ~(linkPortSnac && (snacPort1 || snacPort2));
+
+// only enable the lanes this side drives
+wire [5:0] linkOutLanes = (linkCableMode == 2'b01) ? 6'b000111 : 6'b111000;
+wire [6:0] snacOutLanes = (linkCableMode == 2'b01) ? 7'b0000111 :
+                          linkStraight              ? 7'b0111000 : 7'b1001100;
+
+assign LINK_OE = (linkCableEn && ~linkPortSnac && linkPushPull) ? linkOutLanes : 6'b000000;
+assign USER_OE = (linkCableEn &&  linkPortSnac && linkPushPull) ? snacOutLanes : 7'b0000000;
+
+// both consoles must use the same link speed
+`ifndef MISTER_LINK_CABLE
+wire [2:0] linkSpeed = 3'd5;
+`else
+reg  [2:0] linkSpeed;
+always @(*) begin
+   case (status[97:95])
+      3'd0: linkSpeed = 3'd5; // 1.625x
+      3'd1: linkSpeed = 3'd0; // 1.000x
+      3'd2: linkSpeed = 3'd1; // 1.125x
+      3'd3: linkSpeed = 3'd2; // 1.250x
+      3'd4: linkSpeed = 3'd3; // 1.375x
+      3'd5: linkSpeed = 3'd4; // 1.500x
+      3'd6: linkSpeed = 3'd6; // 1.750x
+      3'd7: linkSpeed = 3'd7; // 1.875x
+   endcase
+end
+`endif
 
 wire       sio_txd, sio_dtr, sio_rts;
 
@@ -1311,6 +1370,7 @@ psx
    .snacMC(status[66]),
    //link cable
    .linkCableOn(linkCableEn),
+   .linkSpeed(linkSpeed),
    .sio_TXD(sio_txd),
    .sio_RXD(sio_rxd_in),
    .sio_DTR(sio_dtr),
@@ -1796,6 +1856,60 @@ wire MCtransfer;
 wire PStransfer;
 wire [7:0]PSdatalength;
 
+// one console must be Type A, the other Type B
+reg [5:0] LINK_IN_1;
+reg [5:0] LINK_IN_2;
+reg [6:0] USER_IN_1;
+reg [6:0] USER_IN_2;
+
+always @(posedge clk_1x)
+begin
+
+	LINK_IN_1 <= LINK_IN;
+	LINK_IN_2 <= LINK_IN_1;
+	USER_IN_1 <= USER_IN;
+	USER_IN_2 <= USER_IN_1;
+
+	LINK_OUT <= '1;
+
+	if (linkCableEn && ~linkPortSnac) begin
+		if (linkCableMode == 2'b01) begin // Type A
+			LINK_OUT[0] <= sio_txd;
+			LINK_OUT[1] <= sio_dtr;
+			LINK_OUT[2] <= sio_rts;
+			sio_rxd_in  <= LINK_IN_2[3];
+			sio_dsr_in  <= LINK_IN_2[4];
+			sio_cts_in  <= LINK_IN_2[5];
+		end
+		else begin                        // Type B
+			LINK_OUT[3] <= sio_txd;
+			LINK_OUT[4] <= sio_dtr;
+			LINK_OUT[5] <= sio_rts;
+			sio_rxd_in  <= LINK_IN_2[0];
+			sio_dsr_in  <= LINK_IN_2[1];
+			sio_cts_in  <= LINK_IN_2[2];
+		end
+	end
+	else if (linkCableEn && linkPortSnac) begin
+		if (linkCableMode == 2'b01) begin // Type A
+			sio_rxd_in  <= USER_IN_2[3];
+			sio_dsr_in  <= USER_IN_2[4];
+			sio_cts_in  <= USER_IN_2[5];
+		end
+		else begin                        // Type B
+			sio_rxd_in  <= USER_IN_2[0];
+			sio_dsr_in  <= USER_IN_2[1];
+			sio_cts_in  <= linkStraight ? USER_IN_2[2] : USER_IN_2[5];
+		end
+	end
+	else begin
+		sio_rxd_in <= 1'b1;
+		sio_dsr_in <= 1'b0;
+		sio_cts_in <= 1'b1;
+	end
+
+end
+
 reg USER_IN3_1;
 reg USER_IN4_1;
 reg USER_IN6_1;
@@ -1845,35 +1959,25 @@ begin
 			irq10Snac   <= ~USER_IN6_2;
 		end
 	end
-	else if (linkCableEn) begin
-		// PSX link cable over a straight USB3 A-A cable through SNAC.
-		// One console must be set to Type A and the other to Type B so that
-		// TXD->RXD, DTR->DSR and RTS->CTS get crossed over.
-		irq10Snac <= 1'b0;
-		ack       <= 1'b1;
-		Dat       <= 1'b1;
-		USER_OUT[0] <= 1'b1;
-		USER_OUT[1] <= 1'b1;
-		USER_OUT[2] <= 1'b1;
-		USER_OUT[3] <= 1'b1;
-		USER_OUT[4] <= 1'b1;
-		USER_OUT[5] <= 1'b1;
-		USER_OUT[6] <= 1'b1;
+	else if (linkCableEn && linkPortSnac) begin
+		irq10Snac   <= 1'b0;
+		ack         <= 1'b1;
+		Dat         <= 1'b1;
+		USER_OUT    <= '1;
 		if (linkCableMode == 2'b01) begin // Type A
 			USER_OUT[0] <= sio_txd;
 			USER_OUT[1] <= sio_dtr;
 			USER_OUT[2] <= sio_rts;
-			sio_rxd_in  <= USER_IN[3];
-			sio_dsr_in  <= USER_IN[4];
-			sio_cts_in  <= USER_IN[5];
 		end
-		else begin                        // Type B
+		else if (linkStraight) begin      // Type B, 1:1 cable
+			USER_OUT[3] <= sio_txd;
+			USER_OUT[4] <= sio_dtr;
+			USER_OUT[5] <= sio_rts;
+		end
+		else begin                        // Type B, crossover cable
 			USER_OUT[3] <= sio_txd;
 			USER_OUT[6] <= sio_dtr;
 			USER_OUT[2] <= sio_rts;
-			sio_rxd_in  <= USER_IN[0];
-			sio_dsr_in  <= USER_IN[1];
-			sio_cts_in  <= USER_IN[5];
 		end
 	end
 	else begin
@@ -1881,9 +1985,6 @@ begin
 		irq10Snac <= 1'b0;
 		ack       <= 1'b1;
 		Dat       <= 1'b1;
-		sio_rxd_in <= 1'b1;
-		sio_dsr_in <= 1'b0;
-		sio_cts_in <= 1'b1;
 	end
 
 	oldselectedPort1 <= selectedPort1Snac;

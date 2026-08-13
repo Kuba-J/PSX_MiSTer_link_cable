@@ -213,6 +213,7 @@ entity psx_top is
 
       -- link cable (SIO1 via SNAC)
       linkCableOn           : in  std_logic;
+      linkSpeed             : in  std_logic_vector(2 downto 0);
       sio_TXD               : out std_logic;
       sio_RXD               : in  std_logic;
       sio_DTR               : out std_logic;
@@ -1179,6 +1180,7 @@ begin
       reset                => reset_intern,
       
       linkCableOn          => linkCableOn,
+      linkSpeed            => linkSpeed,
       
       sio_TXD              => sio_TXD,
       sio_RXD              => sio_RXD,

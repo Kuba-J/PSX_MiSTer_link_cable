@@ -65,8 +65,11 @@ set_global_assignment -name VERILOG_MACRO "MISTER_DOWNSCALE_NN=1"
 # Disable ALSA audio output to save some resources
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
 
+# Link cable port takes the SPI SD and SDRAM DQM pins
+set_global_assignment -name VERILOG_MACRO "MISTER_LINK_CABLE=1"
+
 source sys/sys.tcl
-source sys/sys_spi_sd.tcl
+source sys/sys_link_port.tcl
 source sys/sys_analog.tcl
 source files.qip
 set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
