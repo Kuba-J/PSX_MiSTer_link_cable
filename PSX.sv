@@ -330,7 +330,7 @@ parameter CONF_STR = {
 reg dbg_enabled = 0;
 wire  [1:0] buttons;
 wire [127:0] status;
-wire [15:0] status_menumask = {(PadPortNeGcon1 | PadPortNeGcon2), hack_480p, filter_on, saving_memcard, (bk_pending | saving_memcard), bk_pending, status[59], multitap, biosMod, ~TURBO_MEM, (status[55] && ~hack_480p), (PadPortDS1 | PadPortDS2), dbg_enabled, (PadPortGunCon1 | PadPortGunCon2 | PadPortJustif1 | PadPortJustif2), SDRAM2_EN, (snacPort1 | snacPort2)};
+wire [15:0] status_menumask = {(PadPortNeGcon1 | PadPortNeGcon2), hack_480p, filter_on, saving_memcard, (bk_pending | saving_memcard), bk_pending, status[59], multitap, biosMod, ~TURBO_MEM, (status[55] && ~hack_480p), (PadPortDS1 | PadPortDS2), dbg_enabled, (PadPortGunCon1 | PadPortGunCon2 | PadPortJustif1 | PadPortJustif2), SDRAM2_EN, (snacSelected1 | snacSelected2)};
 wire        forced_scandoubler;
 reg  [31:0] sd_lba0 = 0;
 reg  [31:0] sd_lba1;
@@ -705,7 +705,8 @@ defparam savestate_ui.INFO_TIMEOUT_BITS = 25;
 // 1100..1111 -> reserved
 
 wire PadPortDS1      = (status[48:45] == 4'b0000);
-wire PadPortEnable1  = (status[48:45] != 4'b0001);
+wire snacSelected1   = (status[48:45] == 4'b1010) && ~multitap;
+wire PadPortEnable1  = (status[48:45] != 4'b0001) && ~((status[48:45] == 4'b1010) && (status[94:93] != 2'b00));
 wire PadPortDigital1 = (status[48:45] == 4'b0010) || (status[52:49] == 4'b1100);
 wire PadPortAnalog1  = (status[48:45] == 4'b0011) || (status[48:45] == 4'b0111);
 wire PadPortGunCon1  = (status[48:45] == 4'b0100);
@@ -713,12 +714,13 @@ wire PadPortNeGcon1  = (status[48:45] == 4'b0101) || (status[48:45] == 4'b0110);
 wire PadPortWheel1   = (status[48:45] == 4'b0110) || (status[48:45] == 4'b0111);
 wire PadPortMouse1   = (status[48:45] == 4'b1000);
 wire PadPortJustif1  = (status[48:45] == 4'b1001);
-wire snacPort1       = (status[48:45] == 4'b1010) && ~multitap;
+wire snacPort1       = snacSelected1 && (status[94:93] == 2'b00);
 wire PadPortStick1   = (status[48:45] == 4'b1011);
 wire PadPortPopn1    = (status[48:45] == 4'b1100);
 
 wire PadPortDS2      = (status[52:49] == 4'b0000);
-wire PadPortEnable2  = (status[52:49] != 4'b0001) && ~multitap;
+wire snacSelected2   = (status[52:49] == 4'b1010) && ~multitap;
+wire PadPortEnable2  = (status[52:49] != 4'b0001) && ~multitap && ~((status[52:49] == 4'b1010) && (status[94:93] != 2'b00));
 wire PadPortDigital2 = (status[52:49] == 4'b0010) || (status[52:49] == 4'b1100);
 wire PadPortAnalog2  = (status[52:49] == 4'b0011) || (status[52:49] == 4'b0111);
 wire PadPortGunCon2  = (status[52:49] == 4'b0100);
@@ -726,13 +728,100 @@ wire PadPortNeGcon2  = (status[52:49] == 4'b0101) || (status[52:49] == 4'b0110);
 wire PadPortWheel2   = (status[52:49] == 4'b0110) || (status[52:49] == 4'b0111);
 wire PadPortMouse2   = (status[52:49] == 4'b1000);
 wire PadPortJustif2  = (status[52:49] == 4'b1001);
-wire snacPort2       = (status[52:49] == 4'b1010) && ~multitap;
+wire snacPort2       = snacSelected2 && (status[94:93] == 2'b00);
 wire PadPortStick2   = (status[52:49] == 4'b1011);
 wire PadPortPopn2    = (status[52:49] == 4'b1100);
 
 // link cable over SNAC (USB3 user port).
 wire [1:0] linkCableMode = status[94:93];               // 0=Off, 1=Type A, 2=Type B
-wire       linkCableEn   = (linkCableMode != 2'b00) && ~snacPort1 && ~snacPort2;
+wire       linkCableEn   = (linkCableMode != 2'b00);
+
+// USER port drive mode for link cable.
+// Off: legacy MiSTer open-drain behaviour.
+// Type A/B: push-pull driver, with separate output-enable and contention protection.
+wire [6:0] linkUserOE = (linkCableMode == 2'b01) ? 7'b0000111 : // Type A: TXD=0, DTR=1, RTS=2
+                        (linkCableMode == 2'b10) ? 7'b1001100 : // Type B: TXD=3, DTR=6, RTS=2
+                                                   7'b0000000;
+
+reg  [1:0] linkCableModePrev = 2'b00;
+reg  [3:0] linkDriveGuard    = 4'd0;
+reg  [3:0] linkMismatchCnt   = 4'd0;
+reg [15:0] linkRetryCnt      = 16'd0;
+reg        linkDriveFault    = 1'b0;
+reg  [6:0] linkUserInSync1   = 7'h7F;
+reg  [6:0] linkUserInSync2   = 7'h7F;
+reg  [6:0] linkUserOutSync1  = 7'h7F;
+reg  [6:0] linkUserOutSync2  = 7'h7F;
+
+// Keep push-pull selected while Link Cable is enabled. USER_OE=0 then means true Hi-Z,
+// which is used during mode changes and after a detected output contention.
+assign USER_PUSHPULL = linkCableEn;
+assign USER_OE       = (linkCableEn &&
+                        (linkCableMode == linkCableModePrev) &&
+                        (linkDriveGuard == 4'd0) &&
+                        !linkDriveFault) ? linkUserOE : 7'b0000000;
+
+// Link Cable output-contention protection.
+// USER_IN and USER_OUT are pipelined equally before comparison so normal TX edges
+// cannot look like contention just because of synchronizer/cable propagation delay.
+// A mismatch must remain present for 8 consecutive clk_1x cycles before the
+// outputs are disabled. Any A/B/Off mode change clears the fault and inserts
+// an 8-cycle break-before-make Hi-Z interval before enabling the new outputs.
+// A latched fault also retries automatically after a short Hi-Z cooldown, so
+// correcting A+A/B+B to A+B/B+A recovers both MiSTers without requiring Off.
+always @(posedge clk_1x) begin
+   linkUserInSync1  <= USER_IN;
+   linkUserInSync2  <= linkUserInSync1;
+   linkUserOutSync1 <= USER_OUT;
+   linkUserOutSync2 <= linkUserOutSync1;
+
+   if (reset_or) begin
+      linkCableModePrev <= linkCableMode;
+      linkDriveGuard    <= linkCableEn ? 4'd8 : 4'd0;
+      linkMismatchCnt   <= 4'd0;
+      linkRetryCnt      <= 16'd0;
+      linkDriveFault    <= 1'b0;
+   end
+   else if (linkCableMode != linkCableModePrev) begin
+      linkCableModePrev <= linkCableMode;
+      linkDriveGuard    <= linkCableEn ? 4'd8 : 4'd0;
+      linkMismatchCnt   <= 4'd0;
+      linkRetryCnt      <= 16'd0;
+      linkDriveFault    <= 1'b0;
+   end
+   else if (linkDriveGuard != 4'd0) begin
+      linkDriveGuard  <= linkDriveGuard - 1'b1;
+      linkMismatchCnt <= 4'd0;
+   end
+   else if (!linkCableEn) begin
+      linkMismatchCnt <= 4'd0;
+      linkRetryCnt    <= 16'd0;
+      linkDriveFault  <= 1'b0;
+   end
+   else if (linkDriveFault) begin
+      linkMismatchCnt <= 4'd0;
+      if (linkRetryCnt != 16'd0) begin
+         linkRetryCnt <= linkRetryCnt - 1'b1;
+      end
+      else begin
+         linkDriveFault <= 1'b0;
+         linkDriveGuard <= 4'd8;
+      end
+   end
+   else if (|(USER_OE & (linkUserInSync2 ^ linkUserOutSync2))) begin
+      if (linkMismatchCnt == 4'd7) begin
+         linkDriveFault  <= 1'b1;
+         linkMismatchCnt <= 4'd0;
+         linkRetryCnt    <= 16'hFFFF;
+      end
+      else begin
+         linkMismatchCnt <= linkMismatchCnt + 1'b1;
+      end
+   end
+   else begin
+      linkMismatchCnt <= 4'd0;
+   end
+end
 
 wire       sio_txd, sio_dtr, sio_rts;
 
