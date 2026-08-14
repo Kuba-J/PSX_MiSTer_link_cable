@@ -143,9 +143,9 @@ begin
    ctrlDSRIEN  <= SIO_CTRL(12);
 
    -- effective link inputs
-   -- cable off: DSR=0, CTS/RXD=1
+   -- cable off: DSR=0, CTS=0, RXD=1
    dsrLevel <= DSR_s when linkCableOn = '1' else '0';
-   ctsLevel <= CTS_s when linkCableOn = '1' else '1';
+   ctsLevel <= CTS_s when linkCableOn = '1' else '0';
    rxdLevel <= RXD_s when linkCableOn = '1' else '1';
    
    -- output pins
