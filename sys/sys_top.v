@@ -1658,13 +1658,16 @@ audio_out audio_out
 
 ////////////////  User I/O (USB 3.0 connector) /////////////////////////
 
-assign USER_IO[0] =                       !user_out[0]  ? 1'b0 : 1'bZ;
-assign USER_IO[1] =                       !user_out[1]  ? 1'b0 : 1'bZ;
-assign USER_IO[2] = !(SW[1] ? HDMI_I2S   : user_out[2]) ? 1'b0 : 1'bZ;
-assign USER_IO[3] =                       !user_out[3]  ? 1'b0 : 1'bZ;
-assign USER_IO[4] = !(SW[1] ? HDMI_SCLK  : user_out[4]) ? 1'b0 : 1'bZ;
-assign USER_IO[5] = !(SW[1] ? HDMI_LRCLK : user_out[5]) ? 1'b0 : 1'bZ;
-assign USER_IO[6] =                       !user_out[6]  ? 1'b0 : 1'bZ;
+assign USER_IO[0] = user_pushpull ? (user_oe[0] ? user_out[0] : 1'bZ) : (!user_out[0] ? 1'b0 : 1'bZ);
+assign USER_IO[1] = user_pushpull ? (user_oe[1] ? user_out[1] : 1'bZ) : (!user_out[1] ? 1'b0 : 1'bZ);
+assign USER_IO[2] = SW[1] ? (!HDMI_I2S   ? 1'b0 : 1'bZ) :
+                    user_pushpull ? (user_oe[2] ? user_out[2] : 1'bZ) : (!user_out[2] ? 1'b0 : 1'bZ);
+assign USER_IO[3] = user_pushpull ? (user_oe[3] ? user_out[3] : 1'bZ) : (!user_out[3] ? 1'b0 : 1'bZ);
+assign USER_IO[4] = SW[1] ? (!HDMI_SCLK  ? 1'b0 : 1'bZ) :
+                    user_pushpull ? (user_oe[4] ? user_out[4] : 1'bZ) : (!user_out[4] ? 1'b0 : 1'bZ);
+assign USER_IO[5] = SW[1] ? (!HDMI_LRCLK ? 1'b0 : 1'bZ) :
+                    user_pushpull ? (user_oe[5] ? user_out[5] : 1'bZ) : (!user_out[5] ? 1'b0 : 1'bZ);
+assign USER_IO[6] = user_pushpull ? (user_oe[6] ? user_out[6] : 1'bZ) : (!user_out[6] ? 1'b0 : 1'bZ);
 
 assign user_in[0] =         USER_IO[0];
 assign user_in[1] =         USER_IO[1];
@@ -1707,7 +1710,8 @@ wire  [1:0] btn;
 sync_fix sync_v(clk_vid, vs_emu, vs_fix);
 sync_fix sync_h(clk_vid, hs_emu, hs_fix);
 
-wire  [6:0] user_out, user_in;
+wire  [6:0] user_out, user_in, user_oe;
+wire        user_pushpull;
 
 assign clk_ihdmi= clk_vid;
 assign ce_hpix  = vga_ce_sl;
@@ -1872,6 +1876,8 @@ emu emu
 	.UART_DSR(uart_dtr),
 
 	.USER_OUT(user_out),
+	.USER_OE(user_oe),
+	.USER_PUSHPULL(user_pushpull),
 	.USER_IN(user_in)
 );
 

@@ -142,12 +142,15 @@ output        UART_TXD,
 output        UART_DTR,
 input         UART_DSR,
 
-// Open-drain User port.
+// User port.
 // 0 - D+/RX
 // 1 - D-/TX
 // 2..6 - USR2..USR6
-// Set USER_OUT to 1 to read from USER_IN.
+// USER_PUSHPULL = 0: legacy open-drain (USER_OUT=1 releases the line).
+// USER_PUSHPULL = 1: push-pull; USER_OE selects which pins are actively driven.
 input   [6:0] USER_IN,
 output  [6:0] USER_OUT,
+output  [6:0] USER_OE,
+output        USER_PUSHPULL,
 
 input         OSD_STATUS
