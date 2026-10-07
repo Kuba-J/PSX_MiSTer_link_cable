@@ -229,7 +229,7 @@ parameter CONF_STR = {
 	"D8h2O[9],Show Crosshair,Off,On;",
 	"D8h4O[31],DS Mode,L3+R3+Up/Dn | Click,L1+L2+R1+R2+Up/Dn;",
 	"O[57:56],Multitap,Off,Port1: 4 x Digital,Port1: 4 x Analog;",
-	"O[95:93],Link Cable,Off,Crossover A,Crossover B,Straight A,Straight B,Custom;";
+	"O[95:93],Link Cable,Off,Crossover A,Crossover B,Straight A,Straight B,Custom;",
 	"-;",
 
 	"P1,Video & Audio;",
