@@ -20,6 +20,7 @@ SDRAM of any size is required.
 * Inputs: DualShock, Digital, Analog, Mouse, NeGcon, Wheel, Justifier and Guncon support.
 * Native Input support through SNAC
 * Old GPU (CXD8514Q)
+* Link Cable
 
 ## Bios
 Rename your playstation bios file (e.g. `scph-1001.bin`/`ps-22a.bin` ) and place it in the `./games/PSX/` folder.
