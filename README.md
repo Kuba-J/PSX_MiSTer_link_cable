@@ -63,6 +63,33 @@ To swap discs while the game is running, all disc files for the game must be pla
 /media/fat/games/PSX/Final Fantasy VII (USA)/Final Fantasy VII (USA) (Disc 3).chd
 ```
 
+## Link Cable
+
+Link Cable settings are available under:
+
+Link Cable (SNAC)
+
+Cable Type:
+    Crossed-Over – for USB 3.0 cables with crossed SuperSpeed lines.
+    Straight Through – for straight-through USB 3.0 cables.
+
+Link Cable:
+    Off – Link Cable disabled.
+    Type A / Type B – use Type A on one MiSTer and Type B on the other.
+    Custom – for a dedicated cable wired specifically for the PS1 Link Cable signals.
+
+When Custom is selected, the Cable Type setting and the Type A / Type B distinction are ignored.
+Set both MiSTers to Custom.
+
+When Link Cable is active, the pause function in the core does not work.
+
+It is also recommended to disable the automatic save feature that triggers when opening the OSD, as it can cause the connection to drop in some games.
+
+It is compatible only with newer versions of I/O boards (v6.1+)
+
+To connect via the USB user port, you need a good-quality USB 3.0 SuperSpeed Type-A - Type-A cable with VBUS disconnected.
+Do not connect the 5V line between the two MiSTers.
+
 ## Video output
 
 Core can output through HDMI and Analog out.
