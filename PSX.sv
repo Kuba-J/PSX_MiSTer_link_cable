@@ -229,7 +229,7 @@ parameter CONF_STR = {
 	"D8h2O[9],Show Crosshair,Off,On;",
 	"D8h4O[31],DS Mode,L3+R3+Up/Dn | Click,L1+L2+R1+R2+Up/Dn;",
 	"O[57:56],Multitap,Off,Port1: 4 x Digital,Port1: 4 x Analog;",
-	"O[94:93],Link Cable(SNAC),Off,Type A,Type B;",
+	"O[95:93],Link Cable(SNAC),Off,USB3 Cross A,USB3 Cross B,USB3 Straight A,USB3 Straight B,Custom;",
 	"-;",
 
 	"P1,Video & Audio;",
@@ -704,9 +704,27 @@ defparam savestate_ui.INFO_TIMEOUT_BITS = 25;
 // 1011 -> Analog Joystick
 // 1100..1111 -> reserved
 
+// Link cable type / wiring.
+// 0 = Off
+// 1 = USB3 Cross A       (current cable, side A)
+// 2 = USB3 Cross B       (current cable, side B)
+// 3 = USB3 Straight A    (USER0..6 wired 1:1, side A)
+// 4 = USB3 Straight B    (USER0..6 wired 1:1, side B)
+// 5 = Custom             (both MiSTers use the same mode; cable crosses TX/RX,
+//                          DTR/DSR and RTS/CTS physically)
+wire [2:0] linkCableMode = status[95:93];
+wire       linkCableEn   = (linkCableMode != 3'd0);
+
+localparam [2:0] LINK_OFF        = 3'd0;
+localparam [2:0] LINK_CROSS_A    = 3'd1;
+localparam [2:0] LINK_CROSS_B    = 3'd2;
+localparam [2:0] LINK_STRAIGHT_A = 3'd3;
+localparam [2:0] LINK_STRAIGHT_B = 3'd4;
+localparam [2:0] LINK_CUSTOM     = 3'd5;
+
 wire PadPortDS1      = (status[48:45] == 4'b0000);
 wire snacSelected1   = (status[48:45] == 4'b1010) && ~multitap;
-wire PadPortEnable1  = (status[48:45] != 4'b0001) && ~((status[48:45] == 4'b1010) && (status[94:93] != 2'b00));
+wire PadPortEnable1  = (status[48:45] != 4'b0001) && ~((status[48:45] == 4'b1010) && linkCableEn);
 wire PadPortDigital1 = (status[48:45] == 4'b0010) || (status[52:49] == 4'b1100);
 wire PadPortAnalog1  = (status[48:45] == 4'b0011) || (status[48:45] == 4'b0111);
 wire PadPortGunCon1  = (status[48:45] == 4'b0100);
@@ -714,13 +732,13 @@ wire PadPortNeGcon1  = (status[48:45] == 4'b0101) || (status[48:45] == 4'b0110);
 wire PadPortWheel1   = (status[48:45] == 4'b0110) || (status[48:45] == 4'b0111);
 wire PadPortMouse1   = (status[48:45] == 4'b1000);
 wire PadPortJustif1  = (status[48:45] == 4'b1001);
-wire snacPort1       = snacSelected1 && (status[94:93] == 2'b00);
+wire snacPort1       = snacSelected1 && !linkCableEn;
 wire PadPortStick1   = (status[48:45] == 4'b1011);
 wire PadPortPopn1    = (status[48:45] == 4'b1100);
 
 wire PadPortDS2      = (status[52:49] == 4'b0000);
 wire snacSelected2   = (status[52:49] == 4'b1010) && ~multitap;
-wire PadPortEnable2  = (status[52:49] != 4'b0001) && ~multitap && ~((status[52:49] == 4'b1010) && (status[94:93] != 2'b00));
+wire PadPortEnable2  = (status[52:49] != 4'b0001) && ~multitap && ~((status[52:49] == 4'b1010) && linkCableEn);
 wire PadPortDigital2 = (status[52:49] == 4'b0010) || (status[52:49] == 4'b1100);
 wire PadPortAnalog2  = (status[52:49] == 4'b0011) || (status[52:49] == 4'b0111);
 wire PadPortGunCon2  = (status[52:49] == 4'b0100);
@@ -728,22 +746,19 @@ wire PadPortNeGcon2  = (status[52:49] == 4'b0101) || (status[52:49] == 4'b0110);
 wire PadPortWheel2   = (status[52:49] == 4'b0110) || (status[52:49] == 4'b0111);
 wire PadPortMouse2   = (status[52:49] == 4'b1000);
 wire PadPortJustif2  = (status[52:49] == 4'b1001);
-wire snacPort2       = snacSelected2 && (status[94:93] == 2'b00);
+wire snacPort2       = snacSelected2 && !linkCableEn;
 wire PadPortStick2   = (status[52:49] == 4'b1011);
 wire PadPortPopn2    = (status[52:49] == 4'b1100);
 
 // link cable over SNAC (USB3 user port).
-wire [1:0] linkCableMode = status[94:93];               // 0=Off, 1=Type A, 2=Type B
-wire       linkCableEn   = (linkCableMode != 2'b00);
+wire [6:0] linkUserOE = (linkCableMode == LINK_CROSS_A)    ? 7'b0000111 : // U0=TXD, U1=DTR, U2=RTS
+                        (linkCableMode == LINK_CROSS_B)    ? 7'b1001100 : // U3=TXD, U6=DTR, U2=RTS
+                        (linkCableMode == LINK_STRAIGHT_A) ? 7'b0000111 : // U0=TXD, U1=DTR, U2=RTS
+                        (linkCableMode == LINK_STRAIGHT_B) ? 7'b0111000 : // U3=TXD, U4=DTR, U5=RTS
+                        (linkCableMode == LINK_CUSTOM)     ? 7'b0000111 : // same mapping on both MiSTers
+                                                            7'b0000000;
 
-// USER port drive mode for link cable.
-// Off: legacy MiSTer open-drain behaviour.
-// Type A/B: push-pull driver, with separate output-enable and contention protection.
-wire [6:0] linkUserOE = (linkCableMode == 2'b01) ? 7'b0000111 : // Type A: TXD=0, DTR=1, RTS=2
-                        (linkCableMode == 2'b10) ? 7'b1001100 : // Type B: TXD=3, DTR=6, RTS=2
-                                                   7'b0000000;
-
-reg  [1:0] linkCableModePrev = 2'b00;
+reg  [2:0] linkCableModePrev = LINK_OFF;
 reg  [3:0] linkDriveGuard    = 4'd0;
 reg  [3:0] linkMismatchCnt   = 4'd0;
 reg [15:0] linkRetryCnt      = 16'd0;
@@ -753,22 +768,12 @@ reg  [6:0] linkUserInSync2   = 7'h7F;
 reg  [6:0] linkUserOutSync1  = 7'h7F;
 reg  [6:0] linkUserOutSync2  = 7'h7F;
 
-// Keep push-pull selected while Link Cable is enabled. USER_OE=0 then means true Hi-Z,
-// which is used during mode changes and after a detected output contention.
 assign USER_PUSHPULL = linkCableEn;
 assign USER_OE       = (linkCableEn &&
                         (linkCableMode == linkCableModePrev) &&
                         (linkDriveGuard == 4'd0) &&
                         !linkDriveFault) ? linkUserOE : 7'b0000000;
 
-// Link Cable output-contention protection.
-// USER_IN and USER_OUT are pipelined equally before comparison so normal TX edges
-// cannot look like contention just because of synchronizer/cable propagation delay.
-// A mismatch must remain present for 8 consecutive clk_1x cycles before the
-// outputs are disabled. Any A/B/Off mode change clears the fault and inserts
-// an 8-cycle break-before-make Hi-Z interval before enabling the new outputs.
-// A latched fault also retries automatically after a short Hi-Z cooldown, so
-// correcting A+A/B+B to A+B/B+A recovers both MiSTers without requiring Off.
 always @(posedge clk_1x) begin
    linkUserInSync1  <= USER_IN;
    linkUserInSync2  <= linkUserInSync1;
@@ -1783,9 +1788,8 @@ begin
 		end
 	end
 	else if (linkCableEn) begin
-		// PSX link cable over a straight USB3 A-A cable through SNAC.
-		// One console must be set to Type A and the other to Type B so that
-		// TXD->RXD, DTR->DSR and RTS->CTS get crossed over.
+		// PSX link cable over the SNAC/USER port.
+		// Mapping depends on the selected cable wiring mode.
 		irq10Snac <= 1'b0;
 		ack       <= 1'b1;
 		Dat       <= 1'b1;
@@ -1796,22 +1800,65 @@ begin
 		USER_OUT[4] <= 1'b1;
 		USER_OUT[5] <= 1'b1;
 		USER_OUT[6] <= 1'b1;
-		if (linkCableMode == 2'b01) begin // Type A
-			USER_OUT[0] <= sio_txd;
-			USER_OUT[1] <= sio_dtr;
-			USER_OUT[2] <= sio_rts;
-			sio_rxd_in  <= USER_IN[3];
-			sio_dsr_in  <= USER_IN[4];
-			sio_cts_in  <= USER_IN[5];
-		end
-		else begin                        // Type B
-			USER_OUT[3] <= sio_txd;
-			USER_OUT[6] <= sio_dtr;
-			USER_OUT[2] <= sio_rts;
-			sio_rxd_in  <= USER_IN[0];
-			sio_dsr_in  <= USER_IN[1];
-			sio_cts_in  <= USER_IN[5];
-		end
+		case (linkCableMode)
+			LINK_CROSS_A: begin
+				// Existing USB3 cable, side A.
+				USER_OUT[0] <= sio_txd;
+				USER_OUT[1] <= sio_dtr;
+				USER_OUT[2] <= sio_rts;
+				sio_rxd_in  <= USER_IN[3];
+				sio_dsr_in  <= USER_IN[4];
+				sio_cts_in  <= USER_IN[5];
+			end
+
+			LINK_CROSS_B: begin
+				// Existing USB3 cable, side B.
+				USER_OUT[3] <= sio_txd;
+				USER_OUT[6] <= sio_dtr;
+				USER_OUT[2] <= sio_rts;
+				sio_rxd_in  <= USER_IN[0];
+				sio_dsr_in  <= USER_IN[1];
+				sio_cts_in  <= USER_IN[5];
+			end
+
+			LINK_STRAIGHT_A: begin
+				// Straight-through USB3 cable: USERn connects to USERn.
+				USER_OUT[0] <= sio_txd;
+				USER_OUT[1] <= sio_dtr;
+				USER_OUT[2] <= sio_rts;
+				sio_rxd_in  <= USER_IN[3];
+				sio_dsr_in  <= USER_IN[4];
+				sio_cts_in  <= USER_IN[5];
+			end
+
+			LINK_STRAIGHT_B: begin
+				// Opposite directions for the straight-through cable.
+				USER_OUT[3] <= sio_txd;
+				USER_OUT[4] <= sio_dtr;
+				USER_OUT[5] <= sio_rts;
+				sio_rxd_in  <= USER_IN[0];
+				sio_dsr_in  <= USER_IN[1];
+				sio_cts_in  <= USER_IN[2];
+			end
+
+			LINK_CUSTOM: begin
+				// Purpose-built cable. Both MiSTers use this same mode.
+				// Cable wiring: U0(TXD)->U3(RXD), U1(DTR)->U4(DSR),
+				// U2(RTS)->U5(CTS), and the reverse directions.
+				USER_OUT[0] <= sio_txd;
+				USER_OUT[1] <= sio_dtr;
+				USER_OUT[2] <= sio_rts;
+				sio_rxd_in  <= USER_IN[3];
+				sio_dsr_in  <= USER_IN[4];
+				sio_cts_in  <= USER_IN[5];
+			end
+
+			default: begin
+				sio_rxd_in <= 1'b1;
+				sio_dsr_in <= 1'b0;
+				sio_cts_in <= 1'b0;
+			end
+		endcase
 	end
 	else begin
 		USER_OUT  <= '1;
